@@ -1,6 +1,9 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
+export type RatchetMode = "warn" | "block" | "off"
+export const RATCHET_MODES: readonly RatchetMode[] = ["warn", "block", "off"]
+
 /** Harness configuration (SPEC §3.2). Paths are relative to the project directory. */
 export interface HarnessConfig {
   topicsDir: string
@@ -25,6 +28,19 @@ export interface HarnessConfig {
   gate: {
     synthesisGlobs: string[]
     minCitations: number
+  }
+  ratchet: {
+    /** `warn` appends a reminder at budget, `block` rejects, `off` disables (FR-R2, D7). */
+    mode: RatchetMode
+    budget: number
+    /** Exploratory tools besides the Dewey read tools (FR-R1). */
+    tools: string[]
+    /** Tool-id prefixes that are exploratory (e.g. every Tavily tool). */
+    toolPrefixes: string[]
+    /** A `bash` call is exploratory when its command matches this regex. */
+    bashPattern: string
+    /** Most explored locators remembered per session since the last reset. */
+    maxExplored: number
   }
   ignoreSessionTitlePrefixes: string[]
   compactionBudgetBytes: number
@@ -60,6 +76,14 @@ export const DEFAULT_CONFIG: HarnessConfig = {
   gate: {
     synthesisGlobs: ["findings/*synthesis*.md"],
     minCitations: 3,
+  },
+  ratchet: {
+    mode: "warn",
+    budget: 8,
+    tools: ["read", "grep", "glob", "list", "webfetch", "websearch", "codesearch"],
+    toolPrefixes: ["tavily_"],
+    bashPattern: "\\b(curl|wget|gh|rg|grep|cat|head|tail|less|find|git\\s+(log|show|grep|blame))\\b",
+    maxExplored: 50,
   },
   ignoreSessionTitlePrefixes: ["supervisor-audit @", "supervisor-repair @"],
   compactionBudgetBytes: 4096,

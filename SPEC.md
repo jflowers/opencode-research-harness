@@ -241,7 +241,13 @@ Plugin options (the `[name, options]` tuple form that `Config.plugin` accepts) m
   "notes": { "taggedTools": ["note_save", "note_search", "note_list"], "tagPrefix": "topic:" },
   "editTools": ["write", "edit", "patch", "apply_patch"],
   "gate": { "synthesisGlobs": ["findings/*synthesis*.md"], "weaselWords": "off", "minCitations": 3 },
-  "ratchet": { "mode": "warn", "budget": 8, "bashPattern": "\\b(curl|gh|rg|grep|cat|git\\s+(log|show))\\b" },
+  "ratchet": {
+    "mode": "warn", "budget": 8,                // "warn" | "block" | "off"
+    "tools": ["read", "grep", "glob", "list", "webfetch", "websearch", "codesearch"],  // plus dewey.readTools
+    "toolPrefixes": ["tavily_"],
+    "bashPattern": "\\b(curl|wget|gh|rg|grep|cat|head|tail|less|find|git\\s+(log|show|grep|blame))\\b",
+    "maxExplored": 50
+  },
   // Fallback only; the supervisor's shared side-session registry is checked first (E5).
   "ignoreSessionTitlePrefixes": ["supervisor-audit @", "supervisor-repair @"],
   "injection": "messages",                      // "messages" | "system" — see §3.4
@@ -382,6 +388,8 @@ Every `experimental.*` registration is wrapped so that a missing or renamed hook
 - **Count** in `tool.execute.after` (executed calls only), and record the locator from `input.args` (`filePath`, `path`+`pattern`, `url`, scout repo).
 - **Reset** in `tool.execute.after` of `ledger_upsert_claim` / `ledger_challenge_claim`: if any evidence `locator` or `source` matches a recorded explored locator (normalized), reset to 0 and clear the list. Otherwise subtract `ceil(budget / 2)`.
 - Subagent sessions have their own budgets; they don't drain the parent's.
+- **Matching** (as built): locators are normalized (URLs lose fragment, trailing slash and host case; paths become project-relative without `:line`; `owner/repo@sha:path` becomes `owner/repo:path`). GitHub URLs (`github.com/…/blob/…`, `raw.githubusercontent.com`, `api.github.com/repos/…`) are also recorded in that `owner/repo:path` form. Evidence matches when it equals an explored locator or lies inside it (a file in a grepped folder). The reset runs inside the ledger tools on success rather than in `tool.execute.after`, so a rejected write never resets.
+- A phase-1 `ledger.sqlite` gains the two `session_topics` columns in place (`ALTER TABLE`), keeping session state.
 
 ## 3.8 Coexistence with `opencode-agent-supervisor`
 

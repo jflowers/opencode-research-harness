@@ -1,3 +1,4 @@
+import { RATCHET_MODES, type RatchetMode } from "./config"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { SLUG_RE } from "./paths"
@@ -14,6 +15,8 @@ export interface TopicConfig {
   overrides: {
     synthesisGlobs?: string[]
     minCitations?: number
+    ratchetBudget?: number
+    ratchetMode?: RatchetMode
   }
 }
 
@@ -92,6 +95,10 @@ export function parseTopicMarkdown(slug: string, markdown: string): TopicConfig 
     const parsed = JSON.parse(json) as Record<string, unknown>
     if (Array.isArray(parsed.synthesisGlobs)) overrides.synthesisGlobs = parsed.synthesisGlobs.map(String)
     if (typeof parsed.minCitations === "number") overrides.minCitations = parsed.minCitations
+    if (typeof parsed.ratchetBudget === "number" && parsed.ratchetBudget >= 1) {
+      overrides.ratchetBudget = Math.floor(parsed.ratchetBudget)
+    }
+    if (RATCHET_MODES.includes(parsed.ratchetMode as RatchetMode)) overrides.ratchetMode = parsed.ratchetMode as RatchetMode
   }
 
   return { slug, title, question, dimensions, layers, overrides }

@@ -11,6 +11,13 @@ export interface SessionRow {
   ignored: boolean
 }
 
+export interface RatchetState {
+  count: number
+  explored: string[]
+}
+
+export type RatchetEventKind = "warn" | "block" | "reset" | "half-reset"
+
 /**
  * The working index (SPEC §3.3). Claims are canonical in each topic's
  * `claims.jsonl`; this DB holds a rebuildable copy plus session state and
@@ -57,7 +64,25 @@ export class LedgerDb {
         topic_slug TEXT PRIMARY KEY,
         mtime_ms   REAL NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS ratchet_events (
+        seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+        topic_slug TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        kind       TEXT NOT NULL,
+        count      INTEGER NOT NULL,
+        at         TEXT NOT NULL
+      );
     `)
+    // Phase 2 columns; added in place so a phase-1 ledger keeps its session state.
+    const cols = new Set(
+      (this.db.query("PRAGMA table_info(session_topics)").all() as { name: string }[]).map((c) => c.name),
+    )
+    if (!cols.has("exploratory_count")) {
+      this.db.exec("ALTER TABLE session_topics ADD COLUMN exploratory_count INTEGER NOT NULL DEFAULT 0")
+    }
+    if (!cols.has("explored_since_reset")) {
+      this.db.exec("ALTER TABLE session_topics ADD COLUMN explored_since_reset TEXT NOT NULL DEFAULT '[]'")
+    }
   }
 
   close(): void {
@@ -98,6 +123,45 @@ export class LedgerDb {
         row.ignored ? 1 : 0,
         new Date().toISOString(),
       )
+  }
+
+  // ----------------------------------------------------------------- ratchet
+
+  /** Exploratory calls and explored locators since the session's last reset. */
+  getRatchet(sessionId: string): RatchetState {
+    const row = this.db
+      .query("SELECT exploratory_count, explored_since_reset FROM session_topics WHERE session_id = ?")
+      .get(sessionId) as { exploratory_count: number; explored_since_reset: string } | null
+    if (!row) return { count: 0, explored: [] }
+    let explored: string[] = []
+    try {
+      const parsed = JSON.parse(row.explored_since_reset)
+      if (Array.isArray(parsed)) explored = parsed.map(String)
+    } catch {}
+    return { count: row.exploratory_count, explored }
+  }
+
+  /** Requires the session row to exist (callers go through `sessionRow` first). */
+  putRatchet(sessionId: string, state: RatchetState): void {
+    this.db
+      .query("UPDATE session_topics SET exploratory_count = ?, explored_since_reset = ?, updated_at = ? WHERE session_id = ?")
+      .run(state.count, JSON.stringify(state.explored), new Date().toISOString(), sessionId)
+  }
+
+  addRatchetEvent(slug: string, sessionId: string, kind: RatchetEventKind, count: number): void {
+    this.db
+      .query("INSERT INTO ratchet_events (topic_slug, session_id, kind, count, at) VALUES (?, ?, ?, ?, ?)")
+      .run(slug, sessionId, kind, count, new Date().toISOString())
+  }
+
+  /** Event counts by kind for a topic (FR-R5). */
+  ratchetEventCounts(slug: string): Record<RatchetEventKind, number> {
+    const out: Record<RatchetEventKind, number> = { warn: 0, block: 0, reset: 0, "half-reset": 0 }
+    const rows = this.db
+      .query("SELECT kind, COUNT(*) AS n FROM ratchet_events WHERE topic_slug = ? GROUP BY kind")
+      .all(slug) as { kind: RatchetEventKind; n: number }[]
+    for (const r of rows) if (r.kind in out) out[r.kind] = r.n
+    return out
   }
 
   deleteSession(sessionId: string): void {

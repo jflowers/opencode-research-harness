@@ -60,6 +60,15 @@ ledger_upsert_claim({
 
 `ledger_export` writes verified claims to Dewey learnings (tag `<slug>`, with `validity`, `as_of`, `evidence`) and regenerates `topics/<slug>/CLAIMS.md`. Run it after a synthesis or when a batch of claims is verified. Exported learnings are searchable after the next Dewey start or `dewey reindex`.
 
+## Exploration budget
+
+The harness counts exploratory calls (reads, searches, fetches, Dewey and Tavily queries) since your last claim. The per-turn header shows `Exploration: n/8`.
+
+- At budget it tells you to distill (or, in topics set to `block`, rejects further exploration). Stop and record what you learned with `ledger_upsert_claim`.
+- The budget resets fully only when the claim's evidence cites something you actually explored since the last reset: the file, folder, URL or GitHub path. Cite the real locator.
+- A claim citing nothing you explored (a hypothesis, say) gives back half the budget. That is fine for genuine hypotheses; don't use it to buy more exploration.
+- Subagents have their own budget.
+
 ## What persists
 
 Claims live in `topics/<slug>/claims.jsonl`, which is committed. Commit it along with findings. The ledger survives compaction: the plugin re-injects open hypotheses and verified claims, so keep `[claim:<id>]` tags verbatim in summaries.
