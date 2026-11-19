@@ -135,7 +135,7 @@ export function createHarness(ctx: HarnessContext): Hooks {
 
       ledger_challenge_claim: tool({
         description:
-          "Record counter-evidence against a claim and downgrade it to hypothesis or refuted. Nothing is deleted; the evidence is appended.",
+          "Record counter-evidence against a claim and downgrade it to hypothesis or refuted. Nothing is deleted; the evidence is appended. Confidence drops too: pass `confidence` and `confidenceBasis`, or by default it goes one step down (a refuted claim to speculative).",
         args: {
           id: s.string(),
           newStatus: s.enum(["hypothesis", "refuted"]),
@@ -145,11 +145,16 @@ export function createHarness(ctx: HarnessContext): Hooks {
             observation: s.string().min(1),
             reason: s.string().min(1).describe("How this contradicts or narrows the claim"),
           }),
+          confidence: s
+            .enum(["speculative", "likely", "verified"])
+            .optional()
+            .describe("New confidence in the assertion. Default: one step down; speculative when refuted. Never verified for a hypothesis."),
+          confidenceBasis: s.string().optional().describe("What would change the new confidence. Default: the challenge reason."),
         },
         async execute(args, context) {
           try {
             const claim = challengeClaim(ctx, context.sessionID, args)
-            return `[claim:${claim.id}] is now ${claim.status}; counter-evidence appended.${afterLedgerWrite(context.sessionID, [args.counterEvidence])}`
+            return `[claim:${claim.id}] is now ${claim.status} (${claim.confidence}); counter-evidence appended.${afterLedgerWrite(context.sessionID, [args.counterEvidence])}`
           } catch (err) {
             return toolError(err)
           }

@@ -55,7 +55,7 @@ Optional `.opencode/research-harness.json`, or plugin options (`["<path>", { …
 |---|---|
 | `research_topic` | show / set / list / new / all (cross-topic) |
 | `ledger_upsert_claim` | create or update a claim |
-| `ledger_challenge_claim` | append counter-evidence, downgrade to hypothesis or refuted |
+| `ledger_challenge_claim` | append counter-evidence, downgrade to hypothesis or refuted, and lower the confidence |
 | `ledger_status` | counts, open hypotheses, claim table with `[claim:<id>]` tags |
 | `ledger_export` | verified claims → Dewey learnings; regenerate `CLAIMS.md` |
 

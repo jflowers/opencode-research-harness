@@ -32,6 +32,11 @@ export function upsertClaim(ctx: HarnessContext, sessionId: string, input: Upser
       `Layer \`${input.layer}\` is not defined for topic \`${topic.slug}\`. Use one of: ${topic.layers.map((l) => `\`${l}\``).join(", ")}. Layers come from "Required synthesis dimensions" in TOPIC.md.`,
     )
   }
+  if (input.status === "hypothesis" && input.confidence === "verified") {
+    throw new Rejection(
+      "A `hypothesis` can't have `verified` confidence: verified confidence means it was observed directly, which makes it a `verified` claim. Record it as `verified` with that evidence, or lower the confidence to `likely` or `speculative`.",
+    )
+  }
   if (input.status === "verified") {
     const good = input.evidence.filter((e) => e.locator.trim() && isVerifiableLocator(e.locator))
     if (good.length === 0) {
@@ -66,6 +71,20 @@ export interface ChallengeInput {
   id: string
   newStatus: "hypothesis" | "refuted"
   counterEvidence: { source: string; locator: string; observation: string; reason: string }
+  /** New confidence in the assertion; defaults to one step below the old one, never above `likely`. */
+  confidence?: Confidence
+  /** What would change the new confidence; defaults to the challenge reason. */
+  confidenceBasis?: string
+}
+
+/**
+ * Confidence after a challenge, when the caller gives none. Counter-evidence
+ * lowers confidence one step (verified → likely → speculative). A refuted
+ * assertion drops to speculative. A hypothesis is never left at verified.
+ */
+export function challengedConfidence(prior: Confidence, newStatus: ChallengeInput["newStatus"]): Confidence {
+  if (newStatus === "refuted") return "speculative"
+  return prior === "verified" ? "likely" : "speculative"
 }
 
 export function challengeClaim(ctx: HarnessContext, sessionId: string, input: ChallengeInput): Claim {
@@ -73,9 +92,20 @@ export function challengeClaim(ctx: HarnessContext, sessionId: string, input: Ch
   const prior = ctx.db.claim(topic.slug, input.id)
   if (!prior) throw new Rejection(`No claim \`${input.id}\` in topic \`${topic.slug}\`. \`ledger_status\` lists them.`)
   const ce = input.counterEvidence
+  if (input.newStatus === "hypothesis" && input.confidence === "verified") {
+    throw new Rejection(
+      "A challenged claim can't stay at `verified` confidence: the counter-evidence is the reason it's no longer verified. Pass `likely` or `speculative`, or leave `confidence` out.",
+    )
+  }
+  const confidence = input.confidence ?? challengedConfidence(prior.confidence, input.newStatus)
+  const confidenceBasis =
+    input.confidenceBasis?.trim() ||
+    `Challenged (${ce.locator}): ${ce.reason}. Was ${prior.confidence}: ${prior.confidenceBasis}`
   const claim: Claim = {
     ...prior,
     status: input.newStatus,
+    confidence,
+    confidenceBasis,
     evidence: [
       ...prior.evidence,
       { source: ce.source, locator: ce.locator, observation: `${ce.observation} — ${ce.reason}`, relation: "contradicts" },
