@@ -6,8 +6,9 @@ An opencode plugin for multi-topic research workspaces (a repo with `topics/<slu
 - **Epistemic ledger.** Claims with topic-defined layers, calibrated confidence and evidence, stored in `topics/<slug>/claims.jsonl` (committed) with a SQLite working copy in `.research/ledger.sqlite`.
 - **Synthesis gate.** A synthesis can't be written while hypotheses are open, citations are wrong, or required dimensions are missing.
 - **Dewey export.** Verified claims become Dewey learnings with `validity` / `as_of` / `evidence`, plus a generated `CLAIMS.md`.
+- **Ratchet.** An exploratory-call budget per session (default 8). At budget it reminds the agent to distill (`warn`, the default) or rejects further exploration (`block`, opt-in per topic). A claim whose evidence cites something explored since the last reset clears the budget; any other claim gives back half.
 
-The design is in [SPEC.md](SPEC.md). This is phase 1 (topic, ledger, gate, export). The ratchet is phase 2.
+The design is in [SPEC.md](SPEC.md). Phase 1 is topic, ledger, gate and export; phase 2 is the ratchet.
 
 ## Install
 
@@ -37,9 +38,16 @@ Optional `.opencode/research-harness.json`, or plugin options (`["<path>", { …
 ## Harness
 
 ```json
-{ "minCitations": 5, "synthesisGlobs": ["findings/*synthesis*.md"] }
+{ "minCitations": 5, "synthesisGlobs": ["findings/*synthesis*.md"], "ratchetMode": "block", "ratchetBudget": 10 }
 ```
 ````
+
+### Ratchet
+
+- **Exploratory calls:** `read`, `grep`, `glob`, `list`, `webfetch`, `websearch`, `codesearch`, every `tavily_*` tool, the Dewey read tools, and `bash` commands matching `ratchet.bashPattern` (`curl`, `gh`, `grep`, `cat`, `git log`, …). Only calls that actually ran are counted, and each session (subagents included) has its own count.
+- **Modes:** `warn` (default) appends a reminder to the tool output from the budget-th call on; `block` rejects exploratory calls at budget; `off` disables it. Set it globally under `ratchet` or per topic with `ratchetMode` / `ratchetBudget`.
+- **What counts as "explored":** file paths, folders searched, URLs (also matched as `owner/repo:path` for GitHub pages), and URLs in matching `bash` commands. Evidence matches when it is the same locator or inside it.
+- Warnings, blocks and resets are logged in `ratchet_events`; `ledger_status` shows the topic's totals. Switch a topic to `block` once the warnings show the budget is regularly overrun (D7).
 
 ## Tools
 

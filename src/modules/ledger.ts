@@ -1,3 +1,4 @@
+import { ratchetLine } from "./ratchet"
 import {
   type Category,
   type Claim,
@@ -95,7 +96,7 @@ function cell(s: string): string {
   return s.replace(/\|/g, "\\|").replace(/\n/g, " ")
 }
 
-export function statusMarkdown(ctx: HarnessContext, topic: TopicConfig, crossTopic: boolean): string {
+export function statusMarkdown(ctx: HarnessContext, topic: TopicConfig, crossTopic: boolean, sessionId?: string): string {
   const claims = ctx.db.claims(topic.slug)
   const n = counts(claims)
   const lines = [
@@ -105,6 +106,13 @@ export function statusMarkdown(ctx: HarnessContext, topic: TopicConfig, crossTop
     `- Layers: ${topic.layers.map((l) => `\`${l}\``).join(", ")}`,
     `- Required synthesis dimensions: ${topic.dimensions.join("; ") || "(none set)"}`,
   ]
+  const ratchet = sessionId ? ratchetLine(ctx, sessionId, topic) : null
+  if (ratchet) {
+    const ev = ctx.db.ratchetEventCounts(topic.slug)
+    lines.push(
+      `- ${ratchet} Topic history: ${ev.warn} warnings, ${ev.block} blocks, ${ev.reset} resets, ${ev["half-reset"]} half-resets.`,
+    )
+  }
   const byLayer = new Map<string, number>()
   for (const c of claims) byLayer.set(c.layer, (byLayer.get(c.layer) ?? 0) + 1)
   if (byLayer.size) lines.push(`- By layer: ${[...byLayer].map(([l, k]) => `${l} ${k}`).join(", ")}`)
@@ -134,9 +142,11 @@ export function statusHeader(ctx: HarnessContext, sessionId: string): string | n
     return "[research-harness] No research topic is active in this session. Before researching, ask the user which topic to use (`/topic`). Do not pick one."
   }
   const n = counts(ctx.db.claims(v.topic.slug))
+  const ratchet = ratchetLine(ctx, sessionId, v.topic)
   return [
     `[research-harness] Active topic: ${v.topic.slug}${v.crossTopic ? " — CROSS-TOPIC searches on; say \"cross-topic\" when using unscoped results" : ""}.`,
     `Ledger: ${n.verified} verified, ${n.hypothesis} open hypotheses. Record claims with ledger_upsert_claim; cite them as [claim:<id>].`,
+    ...(ratchet ? [ratchet] : []),
   ].join("\n")
 }
 

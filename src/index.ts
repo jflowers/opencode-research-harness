@@ -8,6 +8,7 @@ import { HarnessContext, type Logger, Rejection } from "./context"
 import { exportReportText, exportTopic } from "./modules/export"
 import { gateAfter, gateBefore } from "./modules/gate"
 import { challengeClaim, compactionBlock, statusHeader, statusMarkdown, upsertClaim } from "./modules/ledger"
+import { ratchetCheck, ratchetCount, ratchetReset, ratchetSettings, resetNote } from "./modules/ratchet"
 import {
   annotateCrossTopicRead,
   parseTopicArgs,
@@ -73,6 +74,14 @@ export function createHarness(ctx: HarnessContext): Hooks {
     relation: s.enum(RELATIONS).describe("How it bears on the claim"),
   })
 
+  /** FR-R3: a successful ledger write resets the ratchet; never fails the write. */
+  const afterLedgerWrite = (sessionId: string, evidence: { source?: string; locator?: string }[]): string =>
+    failOpen(log, "ratchet reset", () => {
+      const kind = ratchetReset(ctx, sessionId, evidence)
+      const topic = ctx.view(sessionId).topic
+      return topic ? resetNote(kind, ratchetSettings(ctx, topic).budget) : ""
+    }) ?? ""
+
   return {
     tool: {
       research_topic: tool({
@@ -116,7 +125,7 @@ export function createHarness(ctx: HarnessContext): Hooks {
         async execute(args, context) {
           try {
             const { claim, created } = upsertClaim(ctx, context.sessionID, args)
-            return `${created ? "Recorded" : "Updated"} [claim:${claim.id}] as ${claim.status} (${claim.layer}, ${claim.confidence}).`
+            return `${created ? "Recorded" : "Updated"} [claim:${claim.id}] as ${claim.status} (${claim.layer}, ${claim.confidence}).${afterLedgerWrite(context.sessionID, args.evidence)}`
           } catch (err) {
             return toolError(err)
           }
@@ -139,7 +148,7 @@ export function createHarness(ctx: HarnessContext): Hooks {
         async execute(args, context) {
           try {
             const claim = challengeClaim(ctx, context.sessionID, args)
-            return `[claim:${claim.id}] is now ${claim.status}; counter-evidence appended.`
+            return `[claim:${claim.id}] is now ${claim.status}; counter-evidence appended.${afterLedgerWrite(context.sessionID, [args.counterEvidence])}`
           } catch (err) {
             return toolError(err)
           }
@@ -154,7 +163,7 @@ export function createHarness(ctx: HarnessContext): Hooks {
           try {
             const v = ctx.view(context.sessionID)
             const topic = ctx.requireTopic(context.sessionID)
-            return statusMarkdown(ctx, topic, v.crossTopic)
+            return statusMarkdown(ctx, topic, v.crossTopic, context.sessionID)
           } catch (err) {
             return toolError(err)
           }
@@ -217,13 +226,16 @@ export function createHarness(ctx: HarnessContext): Hooks {
         if (ctx.view(input.sessionID).ignored) return
         scopeToolCall(ctx, input.tool, input.sessionID, args)
         gateBefore(ctx, input.tool, input.callID, args)
+        ratchetCheck(ctx, input.tool, input.sessionID, args)
       })
     },
 
     "tool.execute.after": async (input, output) => {
       failOpen(log, "tool.execute.after", () => {
+        const args = input.args as Record<string, unknown> | undefined
         gateAfter(ctx, input.callID, output)
-        annotateCrossTopicRead(ctx, input.tool, input.sessionID, input.args as Record<string, unknown> | undefined, output)
+        annotateCrossTopicRead(ctx, input.tool, input.sessionID, args, output)
+        if (!ctx.view(input.sessionID).ignored) ratchetCount(ctx, input.tool, input.sessionID, args, output)
       })
     },
 
