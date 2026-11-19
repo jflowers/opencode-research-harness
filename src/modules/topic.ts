@@ -1,3 +1,4 @@
+import { addNote, type ToolOutput } from "../tool-output"
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { type HarnessContext, Rejection } from "../context"
@@ -274,7 +275,7 @@ export function annotateCrossTopicRead(
   tool: string,
   sessionId: string,
   args: Record<string, unknown> | undefined,
-  output: { output: string },
+  output: ToolOutput,
 ): void {
   if (tool !== "read" || !args) return
   const v = ctx.view(sessionId)
@@ -283,8 +284,8 @@ export function annotateCrossTopicRead(
   if (typeof target !== "string") return
   const rel = toProjectRel(ctx.directory, target)
   const other = rel === null ? null : topicOfPath(rel, ctx.config.topicsDir)
-  if (other && other !== v.topic.slug && typeof output.output === "string") {
-    output.output = `[research-harness] cross-topic source: ${rel} (topic \`${other}\`, active topic \`${v.topic.slug}\`)\n${output.output}`
+  if (other && other !== v.topic.slug) {
+    addNote(output, `[research-harness] cross-topic source: ${rel} (topic \`${other}\`, active topic \`${v.topic.slug}\`)`, "start")
   }
 }
 

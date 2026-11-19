@@ -1,3 +1,4 @@
+import { addNote, type ToolOutput } from "../tool-output"
 import type { RatchetMode } from "../config"
 import { type HarnessContext, Rejection } from "../context"
 import { toProjectRel } from "../paths"
@@ -190,7 +191,7 @@ export function ratchetCount(
   tool: string,
   sessionId: string,
   args: Record<string, unknown> | undefined,
-  output: { output: string } | undefined,
+  output: ToolOutput | undefined,
 ): void {
   const scope = scopeFor(ctx, sessionId)
   if (!scope || !isExploratory(ctx, tool, args)) return
@@ -202,12 +203,10 @@ export function ratchetCount(
   if (scope.settings.mode !== "warn" || next.count < scope.settings.budget || !output) return
   ctx.db.addRatchetEvent(scope.topic.slug, sessionId, "warn", next.count)
   const text = [
-    "",
-    "",
     `[research-harness] Exploratory budget reached (${next.count}/${scope.settings.budget} calls since the last claim).`,
     `Distill before exploring further: record a claim with ledger_upsert_claim whose evidence cites one of ${recentLocators(next.explored)}.`,
   ].join("\n")
-  output.output = typeof output.output === "string" ? `${output.output}${text}` : text
+  addNote(output, text, "end")
 }
 
 export type ResetKind = "reset" | "half-reset" | "none"

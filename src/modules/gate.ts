@@ -1,3 +1,4 @@
+import { replaceText, type ToolOutput } from "../tool-output"
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { isAbsolute, join } from "node:path"
 import type { Claim } from "../claims"
@@ -170,7 +171,7 @@ export function gateBefore(ctx: HarnessContext, tool: string, callId: string, ar
 }
 
 /** `tool.execute.after`: verify snapshotted writes; restore and report on failure. */
-export function gateAfter(ctx: HarnessContext, callId: string, output: { output: string }): void {
+export function gateAfter(ctx: HarnessContext, callId: string, output: ToolOutput): void {
   const snaps = snapshots.get(callId)
   if (!snaps) return
   snapshots.delete(callId)
@@ -187,6 +188,6 @@ export function gateAfter(ctx: HarnessContext, callId: string, output: { output:
     } catch (err) {
       restore = `RESTORING THE PREVIOUS VERSION FAILED (${err instanceof Error ? err.message : String(err)}); the file now holds the rejected draft.`
     }
-    output.output = `[research-harness] ${failureText(target.rel, r)}\n${restore}`
+    replaceText(output, `[research-harness] ${failureText(target.rel, r)}\n${restore}`)
   }
 }
