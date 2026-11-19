@@ -58,8 +58,9 @@ describe("hooks with an MCP-shaped result", () => {
     const result: Record<string, unknown> = { content: [{ type: "text", text: "3 hits" }] }
     await f.hooks["tool.execute.after"]!({ tool: "dewey_semantic_search", sessionID: "s1", callID: "m1", args }, result as never)
     const content = result.content as { type: string; text: string }[]
-    expect(content[0]!.text).toBe("3 hits")
-    expect(content[1]!.text).toMatch(/^\[research-harness\] Exploratory budget reached \(1\/1/)
+    expect(content[0]!.text).toMatch(/^\[research-harness\] Filled in .*source_id = disk-alpha\.$/)
+    expect(content[1]!.text).toBe("3 hits")
+    expect(content[2]!.text).toMatch(/^\[research-harness\] Exploratory budget reached \(1\/1/)
     expect("output" in result).toBe(false)
   })
 })

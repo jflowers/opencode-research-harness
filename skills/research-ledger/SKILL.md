@@ -17,6 +17,7 @@ The `opencode-research-harness` plugin enforces what used to be conventions. Thi
   - Session-notes get the tag `topic:<slug>`.
   - `grep`/`glob` without a path search `topics/<slug>/`.
   - Writes outside `topics/<slug>/` (and `.research/`) are rejected.
+- A tool result that starts with `[research-harness] Filled in by the harness …` lists arguments the harness added (a tag, a default `path`, a `source_id`). They show up in your recorded call, but you didn't write them, so don't report them as your own deviations.
 - If a call is rejected, read the message: it says exactly what to call instead. Don't try to route around it (for example through `bash`).
 - Reading a specific file from another topic is allowed and flagged as a cross-topic source. Say so if you use it.
 - `/topic --all` lifts search scoping for the session. Say "cross-topic" in every reply that uses unscoped results.

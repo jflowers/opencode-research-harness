@@ -62,7 +62,7 @@ describe("counting (FR-R1, FR-R4)", () => {
     expect(await run("dewey_semantic_search", { query: "q" })).toMatch(/^REJECTED/)
     expect(count()).toBe(0)
     f.ctx.caps.params.set("dewey_semantic_search", new Set(["query", "source_id"]))
-    expect(await run("dewey_semantic_search", { query: "q" })).toBe("ok")
+    expect(await run("dewey_semantic_search", { query: "q" })).toMatch(/source_id = disk-alpha\.\nok$/)
     expect(count()).toBe(1)
   })
 
