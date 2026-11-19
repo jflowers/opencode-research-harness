@@ -2,7 +2,7 @@
 
 An opencode plugin for multi-topic research workspaces (a repo with `topics/<slug>/TOPIC.md`, such as `jflowers/research`). It enforces what used to be prompt conventions:
 
-- **Topic scope per session.** `/topic` sets the session's topic. Dewey searches get `source_id: "disk-<slug>"`, learnings get `tag: "<slug>"`, session-notes get `topic:<slug>`, and writes stay in `topics/<slug>/`.
+- **Topic scope per session.** `/topic` sets the session's topic. Dewey searches get `source_id: "disk-<slug>"`, learnings get `tag: "<slug>"`, session-notes get `topic:<slug>`, and writes stay in `topics/<slug>/`. Whatever the harness fills in is listed at the top of that tool's result ("Filled in by the harness …") and published per call for the supervisor (`injectedArgs` in the shared state).
 - **Epistemic ledger.** Claims with topic-defined layers, calibrated confidence and evidence, stored in `topics/<slug>/claims.jsonl` (committed) with a SQLite working copy in `.research/ledger.sqlite`.
 - **Synthesis gate.** A synthesis can't be written while hypotheses are open, citations are wrong, or required dimensions are missing.
 - **Dewey export.** Verified claims become Dewey learnings with `validity` / `as_of` / `evidence`, plus a generated `CLAIMS.md`.

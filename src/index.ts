@@ -7,6 +7,7 @@ import { loadConfig } from "./config"
 import { HarnessContext, type Logger, Rejection } from "./context"
 import { exportReportText, exportTopic } from "./modules/export"
 import { gateAfter, gateBefore } from "./modules/gate"
+import { annotateFilledIn } from "./modules/filled-in"
 import { challengeClaim, compactionBlock, statusHeader, statusMarkdown, upsertClaim } from "./modules/ledger"
 import { ratchetCheck, ratchetCount, ratchetReset, ratchetSettings, resetNote } from "./modules/ratchet"
 import {
@@ -245,7 +246,10 @@ export function createHarness(ctx: HarnessContext): Hooks {
         const out = output as unknown as ToolOutput
         gateAfter(ctx, input.callID, out)
         annotateCrossTopicRead(ctx, input.tool, input.sessionID, args, out)
-        if (!ctx.view(input.sessionID).ignored) ratchetCount(ctx, input.tool, input.sessionID, args, out)
+        if (!ctx.view(input.sessionID).ignored) {
+          annotateFilledIn(ctx, input.sessionID, input.callID, out)
+          ratchetCount(ctx, input.tool, input.sessionID, args, out)
+        }
       })
     },
 
