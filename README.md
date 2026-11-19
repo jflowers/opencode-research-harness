@@ -49,6 +49,24 @@ Optional `.opencode/research-harness.json`, or plugin options (`["<path>", { …
 - **What counts as "explored":** file paths, folders searched, URLs (also matched as `owner/repo:path` for GitHub pages), and URLs in matching `bash` commands. Evidence matches when it is the same locator or inside it.
 - Warnings, blocks and resets are logged in `ratchet_events`; `ledger_status` shows the topic's totals. Switch a topic to `block` once the warnings show the budget is regularly overrun (D7).
 
+### Injected arguments (cross-plugin contract)
+
+Topic scoping edits tool arguments in `tool.execute.before`, and opencode stores the edited input. The model and any auditor then see those values as if the model had written them. So the harness publishes, per call, what it filled in. The [supervisor](https://github.com/jflowers/opencode-supervisor) reads this to tell its auditor that those args were not the agent's.
+
+```ts
+type InjectedArgsRecord = { sessionID: string; tool: string; args: Record<string, unknown> }
+type HarnessSharedState = { injectedArgs?: Map<string /* callID */, InjectedArgsRecord> }
+
+const state = (globalThis as Record<symbol, HarnessSharedState | undefined>)[
+  Symbol.for("opencode-research-harness.shared-state")
+]
+const injected = state?.injectedArgs?.get(callID)?.args
+```
+
+- **What `args` holds.** Only the injected part. A key the model left out (`source_id`, `tag`, `path`) carries the whole value the harness set. For an array (`tags`) it lists only the elements the harness appended (`["topic:<slug>"]`). For a scalar the harness changed (the case of `tag`) it carries the new value.
+- **When.** The record is written in `tool.execute.before`, after scoping and before the tool runs. A call with nothing injected, or one the harness rejected, has no record.
+- **Bounds.** At most 512 callIDs; the oldest are evicted first. Treat the map as read-only, and a missing record as "nothing injected or no harness loaded". Other fields on the state object are internal.
+
 ## Tools
 
 | Tool | Does |
