@@ -6,7 +6,7 @@
 - **First consumer:** `jflowers/research` (multi-topic Dewey vault, `topics/<slug>/`)
 - **Source:** the "opencode-research-harness" Google Doc (ADR-001 + PRD + technical spec, 2026-10-27), generalized and reconciled with `adlc-research/PLAN.md` and the installed plugin types.
 
-This document has three parts: **Part 1 — ADR-002**, **Part 2 — PRD**, **Part 3 — Technical specification**. Part 4 lists the open decisions.
+This document has five parts: **Part 1 — ADR-002**, **Part 2 — PRD**, **Part 3 — Technical specification**, **Part 4 — Decisions** (D1–D10, resolved 2026-11-18), **Part 5 — Enhancements to companion tools** (changes in Dewey, opencode-session-notes and opencode-agent-supervisor that the harness depends on or benefits from).
 
 ### What changed from the Google Doc
 
@@ -18,7 +18,8 @@ This document has three parts: **Part 1 — ADR-002**, **Part 2 — PRD**, **Par
 | 4 | Ignores prior decisions | Reconciles with `adlc-research/PLAN.md`, which rejected a custom ledger, hard ratchet, weasel-word lint and AST extraction. ADR-002 says what is revisited and what stays rejected. |
 | 5 | Hook signatures written from memory | Checked against `@opencode-ai/plugin` 1.19.0 `dist/index.d.ts`. Notable: `tool.execute.after` input now has `args`; `experimental.chat.system.transform` input has `sessionID?` and `model` — **but OpenCode 1.19.0 discards system-transform mutations** (see §3.4). |
 | 6 | No mention of other plugins' state | Explicit coexistence rules with the globally loaded `opencode-agent-supervisor@2.12.0`, including the 2026-11-18 double-load runaway, and a double-load guard of our own. |
-| 7 | Four modules ship together | Ledger, topic scope and gate ship first. Ratchet ships in `warn` mode by default. Repo scout is a later phase. |
+| 7 | Four modules ship together | Ledger, topic scope and gate ship first. Ratchet ships in `warn` mode by default. Repo scout is deferred indefinitely (D9). |
+| 8 | Works around the other tools as they are | Where a gap is in a tool Jay owns (Dewey, session-notes, supervisor), the fix goes there (Part 5) and the harness has an interim behavior until it lands. |
 
 ---
 
@@ -39,7 +40,7 @@ This document has three parts: **Part 1 — ADR-002**, **Part 2 — PRD**, **Par
 
 The Google Doc's four failure modes still apply: exploratory sprawl, context pollution from raw reads, compaction losing citations, and unsupported synthesis. Multi-topic adds a fifth: **cross-topic contamination**, where a search or a note silently pulls in another topic's material.
 
-Evidence that prompt-level scoping does not hold: across this machine's opencode logs, `dewey_semantic_search` (no source filter) appears 1,414 times and `dewey_semantic_search_filtered` 89 times. These logs span all projects, so this is suggestive, not a measurement of `research`. It does show that the agent defaults to the unfiltered tool.
+Evidence that prompt-level scoping does not hold: across this machine's opencode logs, `dewey_semantic_search` (no source filter) appears 1,414 times and `dewey_semantic_search_filtered` 89 times. These logs span all projects, so this is suggestive, not a measurement of `research`. It does show that the agent defaults to the unfiltered tool. The durable fix is in Dewey (E2, Part 5): give every read tool an optional `source_id`, so the harness can scope it instead of rejecting it.
 
 ## 2. Decision drivers
 
@@ -54,7 +55,7 @@ Evidence that prompt-level scoping does not hold: across this machine's opencode
 
 1. **Keep prompt-only (status quo).** Rejected: scoping depends on the agent remembering a filter on every call, and the evidence above says it doesn't.
 2. **PLAN.md Tier E1 — thin tools wrapping session-notes.** Validated tools write tagged notes. Rejected as the store: the gate needs synchronous relational queries ("open hypotheses for topic X", "does claim Y exist and is it verified"), and session-notes is a separate plugin with a text-output tool API. The harness can't call another plugin's tools or read its DB without coupling to its private schema. Status transitions can't be enforced through tags.
-3. **Dewey as the claim store.** Rejected for working state, as in `PLAN.md`: no transactional status transitions, no event emission. Accepted as the **export target** for verified claims: Dewey ≥ v3.6 now has the temporal-validity fields (`validity`, `as_of`, `evidence`, `supersedes`, issue #146) that `PLAN.md` said were missing.
+3. **Dewey as the claim store.** Rejected for working state, as in `PLAN.md`: no transactional status transitions, no event emission. Accepted as the **export target** for verified claims: Dewey now has the temporal-validity fields (`validity`, `as_of`, `evidence`, `supersedes`; #146, merged 2026-11-03) that `PLAN.md` said were missing, and re-ingests a learning when its file changes (#221, merged 2026-11-18). As of upstream `main` (`3776105`), `as_of` is stamped from the vault's git HEAD and can't be passed to `dewey_store_learning`; see E3.
 4. **Four separate plugins (Google Doc option B).** Rejected for the doc's reason: the ratchet and the gate read ledger and topic state synchronously.
 5. **One plugin, `opencode-research-harness`, with modules sharing one SQLite store.** **Accepted.**
 
@@ -69,7 +70,7 @@ Build `opencode-research-harness` as one Bun/TypeScript plugin with five modules
 | `gate` | Blocks writes of synthesis documents with open hypotheses, bad citations or missing dimensions | 1 |
 | `export` | Verified claims → Dewey learnings (tag `<slug>`) and `topics/<slug>/CLAIMS.md` | 1 |
 | `ratchet` | Exploratory-call budget per session; `warn` by default, `block` opt-in | 2 |
-| `scout` | Shallow clone + harness manifest + skeleton extraction | 3 (optional) |
+| `scout` | Shallow clone + harness manifest + skeleton extraction | Deferred (D9) |
 
 ## 5. What is revisited from `adlc-research/PLAN.md`, and why
 
@@ -79,7 +80,7 @@ Build `opencode-research-harness` as one Bun/TypeScript plugin with five modules
 | Dewey can't host the ledger (no write-back, no per-entity hashes, no events) | **Partly revisited.** Dewey still doesn't host working state. It does receive exports. | Dewey's temporal-validity fields now exist, and `kb_to_dewey.py` proved the export pattern. |
 | Research ratchet (hard blocking) risks the agent gaming the gate with low-quality notes | **Kept as a concern.** Ratchet is phase 2, `warn` by default. | Anti-gaming rule (§3.7): a ledger write only resets the budget if its evidence cites a source the session actually explored since the last reset. Hard blocking is opt-in per topic. |
 | Weasel-word detection is brittle regex | **Kept rejected.** Off by default; available as a `warn`-only check. | The supervisor's auditor remains the judge of prose quality. |
-| Multi-language AST/skeleton extraction is too much surface | **Kept deferred.** Scout is phase 3 and optional. | `repo-scout` skill (HTTP-based) keeps working meanwhile. |
+| Multi-language AST/skeleton extraction is too much surface | **Kept deferred.** Scout is not planned (D9). | The `repo-scout` skill (HTTP-based) plus `gh` keeps working. Revisit only if ratchet warnings show repo-reading sprawl. |
 
 ### What happens to the `epistemic-discipline` skill
 
@@ -119,23 +120,23 @@ Give OpenCode research sessions a deterministic topic scope and an epistemic led
 - **FR-T3** Topics are discovered from `topics/*/TOPIC.md` (skipping `_template`). A slug must match `^[a-z0-9][a-z0-9-]*$`.
 - **FR-T4** `research_topic` tool with actions `show`, `set <slug>`, `list`, `all` (cross-topic for this session), `new <slug>` (create from `_template`, append the `disk-<slug>` block to `.uf/dewey/sources.yaml`; the agent still fills in `TOPIC.md` with the user).
 - **FR-T5** `/topic` is handled deterministically in `command.execute.before`: the harness sets state itself and replaces the prompt parts with a short instruction to report the topic's scope and plan. `set` also writes `.research/active-topic` (the workspace default) unless configured not to.
-- **FR-T6** With a topic active and cross-topic mode off, `tool.execute.before` scopes:
-  - `dewey_semantic_search_filtered`: set `source_id = "disk-<slug>"` when absent; reject a different `source_id`.
-  - `dewey_store_learning`: set `tag = "<slug>"` when absent; reject a different tag.
-  - `dewey_semantic_search`, `dewey_search`, `dewey_similar` and other unscoped Dewey read tools: reject with a message naming `dewey_semantic_search_filtered` and the `source_id` to use. (They have no source parameter, so injection is impossible.) The list is config.
-  - `note_save`: add `topic:<slug>` to `tags`.
-  - `note_search`: add `topic:<slug>` to `tags`.
-  - `note_list`: has no `tags` argument in `opencode-session-notes` today. See open decision D4.
-  - `write`, `edit`, `patch`/`apply_patch` and any configured edit tool: reject paths outside `topics/<slug>/` (plus a configured allowlist, e.g. `.research/`).
-  - `read`, `grep`, `glob`: reject explicit paths inside `topics/<other-slug>/`. `grep`/`glob` with no `path` get `path: "topics/<slug>"`.
-  - `bash`: reject commands whose text names `topics/<other-slug>/` (best-effort string check).
-- **FR-T7** Cross-topic mode (`research_topic all`) turns off FR-T6 reads/searches for the session, not writes. The status header says "cross-topic" while it is on.
+- **FR-T6** With a topic active and cross-topic mode off, `tool.execute.before` scopes calls. The rule everywhere: **fill in the topic when it's absent; reject an explicit different topic** (D5). The rejection names the topic in force and `research_topic all` as the way to work across topics.
+  - **Dewey read tools** (`dewey_semantic_search_filtered`, and once E2 ships, `dewey_semantic_search`, `dewey_search`, `dewey_similar`, `dewey_find_by_tag`): set `source_id = "disk-<slug>"`.
+    - *Interim, until E2:* tools without a `source_id` parameter are rejected, with a message giving the equivalent `dewey_semantic_search_filtered` call. The harness detects E2 by the tool's parameter schema (via `tool.definition`), not by a version number.
+  - **`dewey_store_learning`**: set `tag = "<slug>"`.
+  - **`note_save`, `note_search`**: add `topic:<slug>` to `tags`.
+  - **`note_list`**: add `topic:<slug>` to `tags` once E1 ships. *Interim:* reject with a message steering to `note_search` with the tag.
+  - **Writes** (`write`, `edit`, `patch`/`apply_patch`, configured edit tools): reject paths outside `topics/<slug>/` plus a configured allowlist (default `.research/`).
+  - **Searches over files** (`grep`, `glob`): with no `path`, set `path: "topics/<slug>"`. An explicit `path` inside `topics/<other-slug>/` is rejected; an explicit path elsewhere (repo root files, `.opencode/`) is allowed.
+  - **Explicit reads** (`read` of a named file) are allowed anywhere, including another topic's folder (D8). Reading a known path is deliberate and sometimes legitimate (reusing a method or finding). The tool output gets a one-line note when the file belongs to another topic, so the cross-topic source is visible.
+  - **`bash`**: commands that name `topics/<other-slug>/` and contain a write operator (`>`, `>>`, `tee`, `mv`, `cp`, `rm`, `sed -i`) are rejected (best-effort string check). Read-only shell commands are allowed, like explicit reads.
+- **FR-T7** Cross-topic mode (`research_topic all`) turns off FR-T6 for searches (Dewey, notes, `grep`/`glob`) for the session. Write scoping stays on. The status header says "cross-topic" while it is on.
 - **FR-T8** `shell.env` exports `RESEARCH_TOPIC=<slug>` to shell commands.
 
 ### FR-L: Epistemic ledger (module `ledger`)
 
-- **FR-L1** Claims persist in `.research/ledger.sqlite` (gitignored, per checkout), scoped by topic.
-- **FR-L2** A topic's claim **layers** are the slugs of its "Required synthesis dimensions" bullets (e.g. "Failure modes & overhead" → `failure-modes-overhead`), plus an optional `## Claim layers` section that overrides them. `cross-cutting` is always allowed.
+- **FR-L1** The canonical ledger is `topics/<slug>/claims.jsonl`, committed to git: one line per claim, the full current record including hypotheses (D1). Every successful ledger write rewrites the topic's file (sorted by id, stable key order, so diffs stay small). `.research/ledger.sqlite` (gitignored) is the working index: it holds session state and the event log, and the claims tables are rebuilt from `claims.jsonl` whenever the file is newer than the DB or the DB is missing. A fresh clone or a second machine therefore starts with every claim, open hypotheses included.
+- **FR-L2** A topic's claim **layers** are the slugs of its "Required synthesis dimensions" bullets (e.g. "Failure modes & overhead" → `failure-modes-overhead`), plus an optional `## Claim layers` section that overrides them. `cross-cutting` is always allowed, so a claim that spans dimensions isn't forced into the wrong one (D6).
 - **FR-L3** `ledger_upsert_claim`: `id`, `layer`, `assertion`, `mechanism`, `status`, `confidence`, `confidenceBasis` ("what would change it"), `evidence[]` of `{ source, locator, observation, relation }`, optional `failureMode`, `category`. `layer` is validated at execute time against the session's topic (the zod schema is static and can't be per-topic). `verified` requires ≥1 evidence item with a non-empty locator that is a URL, `path:line`, `owner/repo@sha:path`, `note:<id>`, or `learning/<identity>`.
 - **FR-L4** `ledger_challenge_claim`: `id`, `newStatus` (`hypothesis` | `refuted`), `counterEvidence`. Appends, never deletes.
 - **FR-L5** `ledger_status`: markdown summary for the session's topic: counts by status and layer, open hypotheses, ratchet budget, and a table of claims with ready-to-paste `[claim:<id>]` tags.
@@ -155,7 +156,7 @@ Give OpenCode research sessions a deterministic topic scope and an epistemic led
 
 ### FR-E: Export (module `export`)
 
-- **FR-E1** `ledger_export` (tool, also run by `/topic` switch-away if configured) writes verified claims of the session's topic to Dewey learnings tagged `<slug>` with `validity`, `as_of`, `evidence`, and `supersedes` when a previously exported claim changed.
+- **FR-E1** `ledger_export` (tool, also run by `/topic` switch-away if configured) writes verified claims of the session's topic to Dewey learnings tagged `<slug>` with `validity`, `as_of`, `evidence`, and `supersedes` when a previously exported claim changed. It writes the learning files itself (D3, §3.9); it does not depend on the agent making `dewey_store_learning` calls.
 - **FR-E2** It also regenerates `topics/<slug>/CLAIMS.md` (git-reviewable, one section per claim), which Dewey indexes under `disk-<slug>`.
 - **FR-E3** Re-running is idempotent: unchanged claims are skipped; changed claims produce a new learning that supersedes the old one. Refuted claims that were exported get a superseding learning with `validity: historical` and the refutation.
 
@@ -165,10 +166,11 @@ Give OpenCode research sessions a deterministic topic scope and an epistemic led
 - **FR-R2** At budget (default 8 per topic, overridable in `TOPIC.md` or config): `warn` appends a reminder to the tool output; `block` rejects the call with the distill instruction.
 - **FR-R3** The budget resets when `ledger_upsert_claim` or `ledger_challenge_claim` succeeds **and** cites at least one source explored since the last reset. A claim with no such evidence resets half the budget.
 - **FR-R4** Only counts calls that executed (counted in `tool.execute.after`), so a call blocked by another plugin doesn't consume budget.
+- **FR-R5** Default mode is `warn`, budget 8 (D7). Every warning is recorded in `ratchet_events`, and `ledger_status` shows the topic's warning count. `block` is turned on per topic in `TOPIC.md` once those counts show the budget is regularly exceeded without distillation.
 
-### FR-S: Scout (module `scout`, phase 3, optional)
+### FR-S: Scout (module `scout`, deferred)
 
-As in the Google Doc FR-2, with three changes: clone to `/tmp/opencode-scout/<owner>__<repo>` and record `HEAD` sha so evidence can be pinned `owner/repo@sha:path:line`; skeleton extraction uses `ast-grep` if on `PATH` and returns "unsupported" otherwise (no hand-written multi-language parser); no `gaze` integration in v1.
+Not planned (D9). Recorded so it can be picked up later without re-deriving it. As in the Google Doc FR-2, with three changes: clone to `/tmp/opencode-scout/<owner>__<repo>` and record `HEAD` sha so evidence can be pinned `owner/repo@sha:path:line`; skeleton extraction uses `ast-grep` if on `PATH` and returns "unsupported" otherwise (no hand-written multi-language parser); no `gaze` integration in v1.
 
 ## 4. Non-functional requirements
 
@@ -181,7 +183,7 @@ As in the Google Doc FR-2, with three changes: clone to `/tmp/opencode-scout/<ow
 
 ## 5. Out of scope (v1)
 
-Automatic claim invalidation by an event sidecar (PLAN.md Tier E2); FTS over claims; multi-user sync of the ledger; a TUI.
+Automatic claim invalidation by an event sidecar (PLAN.md Tier E2); FTS over claims; multi-user merge of `claims.jsonl` beyond what git gives; the repo scout; a TUI; npm publishing (D10).
 
 ---
 
@@ -205,7 +207,7 @@ opencode-research-harness/
 │   │   ├── gate.ts           # synthesis gate
 │   │   ├── export.ts         # Dewey learnings + CLAIMS.md
 │   │   ├── ratchet.ts        # phase 2
-│   │   └── scout.ts          # phase 3
+│   │   └── (scout.ts)        # deferred, D9
 │   └── util/
 │       ├── markdown.ts       # headings, [claim:id] parse, code-fence aware
 │       └── paths.ts          # normalize, topic containment
@@ -213,7 +215,7 @@ opencode-research-harness/
 └── test/                     # bun:test, temp-dir SQLite and fixtures
 ```
 
-Loaded per project from the research repo's `opencode.json` `plugin` array (path entry during development, npm later). **Not** loaded globally: it is inert elsewhere, but project scope keeps it out of unrelated sessions.
+Hosted as a private GitHub repo, `jflowers/opencode-research-harness`, with the usual `origin`/PR flow (D10). Loaded per project from the research repo's `opencode.json` `plugin` array **by absolute path**, the way `opencode-session-notes` is loaded globally. No npm package until phase 1 has run in real sessions. **Not** loaded globally: it is inert elsewhere, but project scope keeps it out of unrelated sessions.
 
 ## 3.2 Configuration
 
@@ -226,18 +228,21 @@ Plugin options (the `[name, options]` tuple form that `Config.plugin` accepts) m
   "writeWorkspaceDefaultOnSet": true,
   "dbPath": ".research/ledger.sqlite",
   "writeAllowlist": [".research/"],
+  "claimsFile": "claims.jsonl",                 // per topic, committed (D1)
   "dewey": {
-    "toolPrefix": "dewey_",                     // MCP server name "dewey"
     "filteredSearchTool": "dewey_semantic_search_filtered",
-    "unscopedReadTools": ["dewey_semantic_search", "dewey_search", "dewey_similar",
-                          "dewey_find_by_tag", "dewey_traverse", "dewey_list_pages"],
-    "learningsDir": ".uf/dewey/learnings",
-    "exportMode": "file"                        // "file" | "agent" — open decision D3
+    // Scoped by source_id when their schema has it (E2); rejected otherwise.
+    "readTools": ["dewey_semantic_search_filtered", "dewey_semantic_search", "dewey_search",
+                  "dewey_similar", "dewey_find_by_tag"],
+    // Never scoped, never rejected (graph navigation from a page already found).
+    "passthroughTools": ["dewey_get_page", "dewey_get_block", "dewey_traverse", "dewey_health"],
+    "learningsDir": ".uf/dewey/learnings"
   },
-  "notes": { "taggedTools": ["note_save", "note_search"], "tagPrefix": "topic:" },
+  "notes": { "taggedTools": ["note_save", "note_search", "note_list"], "tagPrefix": "topic:" },
   "editTools": ["write", "edit", "patch", "apply_patch"],
   "gate": { "synthesisGlobs": ["findings/*synthesis*.md"], "weaselWords": "off", "minCitations": 3 },
   "ratchet": { "mode": "warn", "budget": 8, "bashPattern": "\\b(curl|gh|rg|grep|cat|git\\s+(log|show))\\b" },
+  // Fallback only; the supervisor's shared side-session registry is checked first (E5).
   "ignoreSessionTitlePrefixes": ["supervisor-audit @", "supervisor-repair @"],
   "injection": "messages",                      // "messages" | "system" — see §3.4
   "compactionBudgetBytes": 4096
@@ -256,7 +261,10 @@ Parsed config is cached by file mtime. A topic with no dimensions is an error at
 
 ## 3.3 Data model (`db.ts`)
 
-`.research/ledger.sqlite`, `PRAGMA journal_mode = WAL`, `PRAGMA busy_timeout = 2000` (two opencode processes can share a checkout).
+Two stores (D1):
+
+- **`topics/<slug>/claims.jsonl`** (committed, canonical for claims). One JSON object per line with the `claims` columns below (camelCase), `evidence` as an array, sorted by `id`. Written atomically (temp file + rename) after each successful ledger write. Hand edits are allowed; they are picked up on the next rebuild.
+- **`.research/ledger.sqlite`** (gitignored, working index), `PRAGMA journal_mode = WAL`, `PRAGMA busy_timeout = 2000` (two opencode processes can share a checkout). On plugin start and before each ledger read, the `claims` rows for a topic are rebuilt from its `claims.jsonl` when the file's mtime is newer than the topic's `rebuilt_at`. `session_topics`, `claim_events` and `ratchet_events` exist only here; losing them loses session state and history, not claims.
 
 ```sql
 CREATE TABLE session_topics (
@@ -299,6 +307,20 @@ CREATE TABLE claim_events (
   after_json   TEXT NOT NULL,
   at           TEXT NOT NULL
 );
+
+CREATE TABLE ratchet_events (
+  seq          INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic_slug   TEXT NOT NULL,
+  session_id   TEXT NOT NULL,
+  kind         TEXT NOT NULL,        -- warn | block | reset | half-reset
+  count        INTEGER NOT NULL,
+  at           TEXT NOT NULL
+);
+
+CREATE TABLE topic_rebuilds (
+  topic_slug   TEXT PRIMARY KEY,
+  rebuilt_at   TEXT NOT NULL          -- mtime of claims.jsonl at last rebuild
+);
 ```
 
 Claim ids are unique per topic, not globally, so two topics can each have `token-cost`.
@@ -309,8 +331,8 @@ Signatures copied from `research/.opencode/node_modules/@opencode-ai/plugin/dist
 
 | Hook | 1.19.0 signature | Harness use |
 |---|---|---|
-| `event` | `({ event: Event }) => Promise<void>` | `session.created`: record parent, inherit topic, mark ignored when title starts with an ignored prefix. `session.updated`: re-check title. `session.deleted`: drop row. |
-| `tool` | `{ [key]: ToolDefinition }`; `execute(args, ctx: ToolContext)` with `ctx.sessionID`, `ctx.directory`, `ctx.worktree`, `ctx.agent` | `research_topic`, `ledger_upsert_claim`, `ledger_challenge_claim`, `ledger_status`, `ledger_export` (+ scout tools in phase 3). |
+| `event` | `({ event: Event }) => Promise<void>` | `session.created`: record parent, inherit topic, mark ignored when the supervisor's registry lists the session (E5) or its title starts with an ignored prefix. `session.updated`: re-check. `session.deleted`: drop row. |
+| `tool` | `{ [key]: ToolDefinition }`; `execute(args, ctx: ToolContext)` with `ctx.sessionID`, `ctx.directory`, `ctx.worktree`, `ctx.agent` | `research_topic`, `ledger_upsert_claim`, `ledger_challenge_claim`, `ledger_status`, `ledger_export`. |
 | `command.execute.before` | `(input: { command; sessionID; arguments }, output: { parts: Part[] })` | `/topic`: set state deterministically, replace `parts` with a short instruction. |
 | `tool.execute.before` | `(input: { tool; sessionID; callID }, output: { args: any })` | Scope injection/rejection (FR-T6), gate (FR-G), ratchet check. Mutate `output.args` in place; reject by throwing `Error`. |
 | `tool.execute.after` | `(input: { tool; sessionID; callID; args: any }, output: { title; output; metadata })` | **`args` is new in this version.** Ratchet: count executed exploratory calls and record explored locators from `input.args` (`filePath`, `url`, `path`). Reset on successful ledger writes. Gate snapshot verification (§3.6). Ratchet `warn` text appended to `output.output`. |
@@ -318,7 +340,7 @@ Signatures copied from `research/.opencode/node_modules/@opencode-ai/plugin/dist
 | `experimental.session.compacting` | `(input: { sessionID }, output: { context: string[]; prompt?: string })` | Push ledger block (FR-L7). Never set `prompt` (would override the DCP plugin and OpenCode's default). |
 | `experimental.chat.messages.transform` | `(input: {}, output: { messages: { info; parts }[] })` | **Default delivery path for the status header** (FR-L8). No `sessionID` in input; derive it from `messages[i].info.sessionID`, as the supervisor does. |
 | `experimental.chat.system.transform` | `(input: { sessionID?: string; model: Model }, output: { system: string[] })` | **Not used by default.** The types now pass `sessionID`, but the supervisor's wire capture on the installed 1.19.0 build showed that no plugin's system-transform mutation reaches the request (supervisor `design.md`, FR-016 amendment 2026-10-27). Enabled only with `injection: "system"`, for a future build where delivery is verified. Never both, to avoid double delivery. |
-| `tool.definition` | `(input: { toolID }, output: { description; parameters })` | Append a one-line note to the descriptions of the unscoped Dewey tools ("rejected while a research topic is active; use dewey_semantic_search_filtered"). Input has no session, so the text is static. |
+| `tool.definition` | `(input: { toolID }, output: { description; parameters })` | Capability detection: record whether each configured Dewey read tool's `parameters` has `source_id` (E2) and whether `note_list` has `tags` (E1). Those flags choose scope-vs-reject in §3.5. For tools that will be rejected, append a one-line note to the description ("rejected while a research topic is active; use dewey_semantic_search_filtered"). Input has no session, so the text is static. If the hook never fires for a tool, assume the capability is absent. |
 | `dispose` | `() => Promise<void>` | Close the DB; release the shared-state load record. |
 
 Not used: `chat.message`, `chat.params`, `chat.headers`, `permission.ask`, `experimental.text.complete`, `experimental.compaction.autocontinue`.
@@ -334,9 +356,10 @@ Every `experimental.*` registration is wrapped so that a missing or renamed hook
 ## 3.5 Topic module
 
 - **Resolution** per call: `session_topics[sessionID]` → (created lazily) parent's row → workspace default file → none.
-- **Ignored sessions** (supervisor side sessions, by title prefix): every hook returns immediately. No scoping, no counting, no injection.
+- **Ignored sessions** (supervisor side sessions; §3.8 rule 3): every hook returns immediately. No scoping, no counting, no injection.
 - **`/topic`** in `command.execute.before` when `input.command === "topic"`: parse `input.arguments` the same way as the current command (`""`, `<slug>`, `--new <slug>`, `--all`, `--list`). Apply the state change, then replace `output.parts` with one text part that tells the model what happened and what to do next (e.g. "Active topic is now `x`. Read `topics/x/TOPIC.md` and `PLAN.md` and report the scope and next steps."). `--new` creates files and the sources entry, then instructs the model to interview the user for `TOPIC.md`. The current `research/.opencode/commands/topic.md` stays as the command definition (so `/topic` exists in the menu) but its body shrinks to a fallback for when the plugin isn't loaded.
-- **Arg rewriting** (FR-T6): implemented as a table of `{ tool, apply(args, topic) → args | Rejection }`. Rejections throw `Error` with text beginning `[research-harness] `.
+- **Arg rewriting** (FR-T6): implemented as a table of `{ tool, capability?, apply(args, topic) → args | Rejection }`. An entry with a `capability` (`dewey.source_id`, `notes.list_tags`) scopes when `tool.definition` saw the parameter and falls back to its interim rejection otherwise, so E1/E2 take effect without a harness release. Rejections throw `Error` with text beginning `[research-harness] ` and include the corrected call.
+- **Cross-topic reads** (D8): `read` of a file under `topics/<other>/` passes; `tool.execute.after` prefixes `output.output` with `[research-harness] cross-topic source: topics/<other>/…`.
 - **Paths**: normalize against `ctx`-equivalent project directory (`PluginInput.directory`), resolve `..`, and compare by path segments, not string prefix (`topics/ab` must not match `topics/abc`).
 
 ## 3.6 Gate module
@@ -368,9 +391,9 @@ Rules for the harness:
 
 1. **Never load the supervisor from the research repo's `opencode.json`.** (Already documented there.) The harness README repeats this.
 2. **Our own double-load guard.** Process-wide state lives on `globalThis[Symbol.for("opencode-research-harness.shared-state")]`, with `loadsByDirectory: Map<directory, Set<moduleUrl>>`, as in the supervisor's `registerPluginLoad`. A second copy for the same directory logs one warning naming both module URLs and **returns `{}`** (no hooks, no tools). The supervisor only warns; the harness must not run twice because double scoping is harmless but double counting and double injection are not.
-3. **Ignore supervisor side sessions.** Sessions whose title starts with `supervisor-audit @` or `supervisor-repair @` are marked ignored on `session.created`/`session.updated`. The supervisor's FR-100 disables tools in those sessions; ignoring them anyway means a future supervisor regression can't make the harness scope or block an auditor, and the harness never injects into an audit prompt.
+3. **Ignore supervisor side sessions.** The primary check reads the supervisor's process-wide registry, `globalThis[Symbol.for("opencode-agent-supervisor.shared-state")].sideSessionIds`, which every supervisor copy shares since FR-099. E5 makes that registry a documented contract. The fallback, for supervisor builds without it, is the title prefix `supervisor-audit @` / `supervisor-repair @`, checked on `session.created`/`session.updated`. The supervisor's FR-100 disables tools in those sessions; ignoring them anyway means a future supervisor regression can't make the harness scope or block an auditor, and the harness never injects into an audit prompt.
 4. **No side sessions, no model calls.** The harness creates no sessions and never calls `client.session.prompt`. It can't contribute to a runaway.
-5. **Hook ordering.** Both plugins mutate `output.args` in `tool.execute.before`. The supervisor's arg-repair should run before the harness's scope injection, so the harness sees repaired args. Global plugins are expected to run before project plugins; verify on 1.19.0 and record the order in a test fixture. If the order turns out reversed, a test must show that the supervisor's repair keeps injected keys (`source_id`, `tags`, `tag`). Args can't be changed after `tool.execute.before`, so if repair drops them the fix belongs in the supervisor (preserve unknown keys), not in the harness.
+5. **Hook ordering.** Both plugins mutate `output.args` in `tool.execute.before`. The supervisor's arg-repair should run before the harness's scope injection, so the harness sees repaired args. Global plugins are expected to run before project plugins; verify on 1.19.0 and record the order in a test fixture. If the order turns out reversed, the supervisor's repair must keep keys it didn't write (`source_id`, `tags`, `tag`). Args can't be changed after `tool.execute.before`, so that guarantee belongs in the supervisor (E4), not in the harness.
 6. **Blocks look like tool failures to the supervisor.** That is intended. The supervisor's directives must not instruct the agent to work around them; update `epistemic-rigor.md` (§5 of the ADR).
 7. **Injection channel.** The supervisor delivers its memo via `experimental.chat.messages.transform`, appending one trailing user message per prompt. The harness uses the same hook and appends its status header to that same trailing synthetic position only if present, otherwise as its own small trailing text part. Keep the header ≤5 lines so the two do not crowd each other.
 
@@ -390,41 +413,71 @@ Pattern from `adlc-research/scripts/kb_to_dewey.py` (frontmatter `tag`, `categor
 | `supersedes` | Previous `dewey_identity` when the claim was exported before |
 | body | `# <id>: <assertion>`, then mechanism, failure mode, layer, confidence basis |
 
-`exportMode: "file"` writes `.uf/dewey/learnings/<identity>.md` directly. This keeps per-claim `as_of`, which `dewey_store_learning` can't set (it stamps `as_of` from the vault's git HEAD). Dewey picks the files up on its next index/serve; `ledger_export` says so in its output.
+**Mechanism (D3): the harness writes `.uf/dewey/learnings/<identity>.md` itself**, atomically, in the frontmatter format Dewey's `learning_temporal.go` writes (the same contract `kb_to_dewey.py` relies on). Reasons:
 
-`exportMode: "agent"` instead returns a list of exact `dewey_store_learning` / `dewey_supersede_learning` calls for the agent to make, and records the returned identities via a follow-up `ledger_export --confirm`. Immediate embedding, but `as_of` is the vault HEAD.
+- It is deterministic. A plugin can't call another server's MCP tools, so the alternative was handing the agent a list of `dewey_store_learning` calls to make, which puts the agent back in the loop for the one step that must not be skipped.
+- It keeps a per-claim `as_of`. `dewey_store_learning` stamps `as_of` from the vault's git HEAD and has no input for it (upstream `main`, `3776105`).
+- Dewey already converges to file changes: since #221 (merged 2026-11-18) a learning whose file changed is re-ingested, not only one whose page is missing. Today that happens when the server starts; E3b makes it happen while the server runs. Until then `ledger_export`'s output says the learnings are searchable after the next Dewey start or `dewey reindex` (#223).
 
-`CLAIMS.md` is regenerated in both modes.
+A golden-file test pins the frontmatter shape against Dewey's own writer output, so a Dewey format change fails the harness tests instead of producing learnings Dewey can't read.
+
+`CLAIMS.md` is regenerated on every export.
 
 ## 3.10 Tests (`bun test`)
 
 - `topic-config.test.ts`: dimension → layer slugs; `## Claim layers` override; `## Harness` overrides; missing dimensions error.
-- `topic.test.ts`: per-session state and parent inheritance; `/topic` arg parsing; each FR-T6 rewrite and rejection; `topics/ab` vs `topics/abc`; cross-topic mode; ignored supervisor sessions untouched.
-- `ledger.test.ts`: `verified` without a valid locator throws; layer outside the topic throws; `claim_events` appended; per-topic id namespace.
+- `topic.test.ts`: per-session state and parent inheritance; `/topic` arg parsing; each FR-T6 rewrite and rejection, both with and without the E1/E2 capabilities; mismatched explicit topic rejected; cross-topic read annotated, not blocked; `topics/ab` vs `topics/abc`; cross-topic mode; ignored supervisor sessions (registry and title fallback) untouched.
+- `ledger.test.ts`: `verified` without a valid locator throws; layer outside the topic throws; `cross-cutting` accepted; `claim_events` appended; per-topic id namespace; `claims.jsonl` written sorted and stable; SQLite deleted → claims rebuilt from `claims.jsonl`; hand-edited `claims.jsonl` picked up.
 - `gate.test.ts`: open hypothesis, unknown citation, refuted citation, missing dimension, pass; `edit` applied in memory; snapshot-restore path.
 - `ratchet.test.ts`: budget reached → block in `block` mode, warn text in `warn` mode; reset only with explored-source evidence; half reset otherwise; blocked-by-other-plugin calls not counted.
-- `export.test.ts`: frontmatter shape matches a fixture produced from `kb_to_dewey.py` conventions; idempotency; supersession; refuted → historical.
+- `export.test.ts`: frontmatter matches a golden file produced by Dewey's own learning writer; idempotency; supersession; refuted → historical; owner-qualified `as_of`.
 - `double-load.test.ts`: second copy for the same directory returns `{}` and warns once.
 
 ## 3.11 Rollout
 
-1. Phase 1 (topic, ledger, gate, export) in `opencode-research-harness`; load it by path in `research/opencode.json`.
-2. Same change in `research`: shrink `commands/topic.md` to a fallback, replace `epistemic-discipline` with the plugin's `research-ledger` skill, update `epistemic-rigor.md` and `research-discipline.md`, update `AGENTS.md`'s scoping section to "enforced by the harness".
-3. Run the wire checks in §3.4 on 1.19.0. Fix any surprises before turning on `block` anywhere.
-4. Phase 2 ratchet in `warn`; promote to `block` per topic only after a few sessions of logs.
-5. Phase 3 scout, if the HTTP-based `repo-scout` skill proves insufficient.
+1. Create the private GitHub repo `jflowers/opencode-research-harness` and push this spec.
+2. Companion enhancements (Part 5), in parallel with step 3; none blocks phase 1 because each has an interim behavior.
+3. Phase 1 (topic, ledger, gate, export) in `opencode-research-harness`; load it by absolute path in `research/opencode.json`.
+4. Same change in `research`: shrink `commands/topic.md` to a fallback, replace `epistemic-discipline` with the plugin's `research-ledger` skill, update `epistemic-rigor.md` and `research-discipline.md`, and update `AGENTS.md`'s scoping section to "enforced by the harness". No `.gitignore` change is needed: `claims.jsonl` lives under the tracked `topics/`, and `.research/` is already ignored.
+5. Run the wire checks in §3.4 on 1.19.0. Fix any surprises before turning on `block` anywhere.
+6. Phase 2 ratchet in `warn`; promote to `block` per topic once `ratchet_events` show the need.
 
 ---
 
-# Part 4 — Open decisions
+# Part 4 — Decisions
 
-- **D1. Ledger location.** `.research/ledger.sqlite` (gitignored, per checkout, as specified) vs committed. Per-checkout means a fresh clone starts with an empty ledger, and only `CLAIMS.md` + Dewey carry claims forward. Alternative: also export the ledger as JSONL into `topics/<slug>/claims.jsonl` and rebuild on start.
-- **D2. Fate of `.research/active-topic`.** Spec keeps it as the workspace default that seeds new sessions and that `/topic <slug>` updates. Alternative: drop it and require `/topic` in every new session (stricter, more friction).
-- **D3. Export mode.** `file` (deterministic, per-claim `as_of`, needs a Dewey re-index) vs `agent` (immediate embedding, `as_of` = vault HEAD). Spec defaults to `file`.
-- **D4. `note_list` scoping.** `opencode-session-notes` `note_list` has no `tags` argument, so it can't be scoped by injection. Options: (a) add a `tags` filter to `note_list` upstream in `jflowers/opencode-session-notes` (recommended; small change you own); (b) reject `note_list` while a topic is active and steer to `note_search`; (c) post-filter the text output in `tool.execute.after` (fragile).
-- **D5. Mismatched explicit scope.** When the agent passes a different `source_id` or tag: reject (spec) vs silently overwrite. Rejecting is louder but costs a turn.
-- **D6. Layers.** Derive layers from "Required synthesis dimensions" (spec, satisfies "come from each topic's config") vs require a separate `## Claim layers` section in every `TOPIC.md`. Also: keep the always-allowed `cross-cutting` layer or not.
-- **D7. Ratchet default.** `warn` (spec) vs `block`, and the default budget (spec: 8; Google Doc: 6).
-- **D8. Read scoping.** Spec rejects reads of other topics' folders and defaults `grep`/`glob` to the topic folder. Looser option: only block writes and searches, allow reading other topics' files.
-- **D9. Scout.** Build phase 3 at all, or keep the HTTP `repo-scout` skill indefinitely.
-- **D10. Repo hosting.** Local only for now. Create `github.com/jflowers/opencode-research-harness` (private?) and publish to npm later?
+Resolved 2026-11-18 (Jay accepted the recommendations). Each states the choice and why.
+
+| # | Decision | Choice | Why |
+|---|---|---|---|
+| D1 | Ledger location | `topics/<slug>/claims.jsonl` committed and canonical; `.research/ledger.sqlite` gitignored and rebuildable (FR-L1, §3.3) | Claims are the research product. A gitignored DB is one `git clean` away from loss, and `CLAIMS.md` only carries verified claims, so open hypotheses would vanish on a fresh clone or second machine. JSONL sorted by id diffs well in PRs. |
+| D2 | `.research/active-topic` | Kept, only as the default topic for new sessions; `/topic <slug>` updates it (FR-T2, FR-T5) | Per-session state stops sessions overwriting each other; the default avoids running `/topic` in every session. A stale default is visible in the per-turn status header. |
+| D3 | Export mechanism | Harness writes Dewey learning files itself (§3.9) | Deterministic (no agent in the loop), per-claim `as_of`, and Dewey re-ingests changed learning files since #221. E3 (`as_of` input) is still worth doing for agent-stored learnings, but the harness doesn't need it. |
+| D4 | `note_list` scoping | Add a `tags` filter in `opencode-session-notes` (E1); reject `note_list` until then | Clean fix in code Jay owns; the alternatives are blunt (reject forever) or fragile (filter text output). |
+| D5 | Explicit different topic in args | Reject, with the corrected call and the cross-topic escape | The harness already fills in absent scope, so a rejection only fires when the agent deliberately targets another topic — exactly the case worth surfacing. Costs one turn. |
+| D6 | Claim layers | Derived from "Required synthesis dimensions", optional `## Claim layers` override, `cross-cutting` always allowed (FR-L2) | One source of truth per topic, already in the template. `cross-cutting` avoids mis-filing claims that span dimensions. |
+| D7 | Ratchet default | `warn`, budget 8; `block` per topic when `ratchet_events` show the need (FR-R5) | Respects `PLAN.md`'s gaming concern; the supervisor already audits; warning counts give evidence before blocking. |
+| D8 | Read scoping | Explicit reads allowed anywhere (annotated when cross-topic); searches scoped; writes blocked outside the topic (FR-T6) | Contamination comes from unscoped searches, not deliberate reads of a named file, and reusing another topic's finding is sometimes legitimate. |
+| D9 | Repo scout | Not planned | The `repo-scout` skill plus `gh` works; `PLAN.md` rejected the surface area. Revisit if ratchet warnings show repo-reading sprawl. |
+| D10 | Hosting | Private GitHub repo `jflowers/opencode-research-harness` now; loaded by absolute path; no npm until phase 1 has run in real sessions | Backup and the usual PR flow from the start; publishing is premature. |
+
+---
+
+# Part 5 — Enhancements to companion tools
+
+Gaps found while writing this spec that belong in tools Jay owns, not in the harness. Each has an interim harness behavior, so none blocks phase 1. Upstream state checked against `unbound-force/dewey` `main` at `3776105` (2026-11-18).
+
+| # | Repo | Enhancement | What the harness does until it lands | What changes once it lands |
+|---|---|---|---|---|
+| E1 | `jflowers/opencode-session-notes` | Optional `tags` filter on `note_list`, same semantics as `note_search`. | Rejects `note_list` while a topic is active, steering to `note_search` with the tag. | Adds `topic:<slug>` to `note_list` like the other note tools (detected via `tool.definition`). |
+| E2 | `unbound-force/dewey` | Optional `source_id` (and `has_tag`) on `semantic_search`, `search`, `similar` and `find_by_tag`, matching `semantic_search_filtered`. | Rejects those tools while a topic is active, with the equivalent `semantic_search_filtered` call. | Scopes every Dewey read tool by filling in `source_id`. Removes the most frequent rejection (unfiltered `semantic_search` is the agent's default). |
+| E3 | `unbound-force/dewey` | Optional caller-supplied `as_of` on `store_learning`, validated as `owner/repo@sha`; the git-HEAD stamp stays the default. | Not needed by the harness (it writes files, D3). | Agents storing learnings outside the harness can pin them to the source they observed, not to the vault's HEAD. |
+| E3b | `unbound-force/dewey` | Re-ingest changed learning files while serving (watch `.uf/dewey/learnings/`), building on #221; or finish #223 (`dewey reindex` re-ingests learnings). | `ledger_export` says exported learnings are searchable after the next Dewey start or reindex. | Exported claims are searchable in the same session. |
+| E4 | `jflowers/opencode-supervisor` | Arg repair preserves keys it didn't change (`source_id`, `tags`, `tag`), with a test. | Relies on hook order (global plugins first); §3.4 wire check verifies. | Correct regardless of hook order. |
+| E5 | `jflowers/opencode-supervisor` | Document `Symbol.for("opencode-agent-supervisor.shared-state").sideSessionIds` as a stable cross-plugin contract (README + test that it's populated before the side session's first event). | Reads the registry if present, falls back to title prefixes. | Side-session detection no longer depends on title text. |
+
+Not enhancements Jay can make:
+
+- **OpenCode 1.19.0 drops `experimental.chat.system.transform` mutations** (supervisor design.md FR-016 amendment). Worked around by using `experimental.chat.messages.transform` (§3.4).
+- **Whether args mutated in `tool.execute.before` reach MCP tools, and plugin hook order**, are OpenCode behavior. Covered by the §3.4 wire checks.
+- Housekeeping, unrelated to the harness: `get-out/.opencode` pins `@opencode-ai/plugin` 1.4.6 against an installed 1.19.0.
