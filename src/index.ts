@@ -18,6 +18,7 @@ import {
   scopeToolCall,
 } from "./modules/topic"
 import { registerLoad, releaseLoad } from "./shared-state"
+import type { ToolOutput } from "./tool-output"
 
 export { HarnessContext, Rejection } from "./context"
 
@@ -233,9 +234,11 @@ export function createHarness(ctx: HarnessContext): Hooks {
     "tool.execute.after": async (input, output) => {
       failOpen(log, "tool.execute.after", () => {
         const args = input.args as Record<string, unknown> | undefined
-        gateAfter(ctx, input.callID, output)
-        annotateCrossTopicRead(ctx, input.tool, input.sessionID, args, output)
-        if (!ctx.view(input.sessionID).ignored) ratchetCount(ctx, input.tool, input.sessionID, args, output)
+        // MCP tools pass their raw result ({ content: [...] }) here, not { output } (see tool-output.ts).
+        const out = output as unknown as ToolOutput
+        gateAfter(ctx, input.callID, out)
+        annotateCrossTopicRead(ctx, input.tool, input.sessionID, args, out)
+        if (!ctx.view(input.sessionID).ignored) ratchetCount(ctx, input.tool, input.sessionID, args, out)
       })
     },
 
