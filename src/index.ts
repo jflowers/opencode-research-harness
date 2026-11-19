@@ -17,7 +17,7 @@ import {
   runTopicAction,
   scopeToolCall,
 } from "./modules/topic"
-import { registerLoad, releaseLoad } from "./shared-state"
+import { injectedPart, recordInjectedArgs, registerLoad, releaseLoad, snapshotArgs } from "./shared-state"
 import type { ToolOutput } from "./tool-output"
 
 export { HarnessContext, Rejection } from "./context"
@@ -225,7 +225,9 @@ export function createHarness(ctx: HarnessContext): Hooks {
         const args = (output.args ?? {}) as Record<string, unknown>
         output.args = args
         if (ctx.view(input.sessionID).ignored) return
+        const before = snapshotArgs(args)
         scopeToolCall(ctx, input.tool, input.sessionID, args)
+        recordInjectedArgs(input.callID, input.sessionID, input.tool, injectedPart(before, args))
         gateBefore(ctx, input.tool, input.callID, args)
         ratchetCheck(ctx, input.tool, input.sessionID, args)
       })
