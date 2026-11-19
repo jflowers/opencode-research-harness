@@ -44,7 +44,7 @@ ledger_upsert_claim({
   - `likely`: consistent with several sources, or one authoritative source plus your analysis.
   - `speculative`: inferred from incomplete data or a single weak source.
 - **Locators must be precise** for a `verified` claim: a URL, `path:line`, `owner/repo@sha:path:line`, `note:<id>` or `learning/<identity>`. Without one, record it as a `hypothesis`.
-- **Never delete or silently rewrite.** When evidence contradicts a claim, use `ledger_challenge_claim` (to `hypothesis` or `refuted`). The history is kept.
+- **Never delete or silently rewrite.** When evidence contradicts a claim, use `ledger_challenge_claim` (to `hypothesis` or `refuted`). The history is kept. Confidence drops one step with it (to `speculative` when refuted) unless you pass a new `confidence` and `confidenceBasis`.
 - `ledger_status` shows counts, open hypotheses and a table of claims with ready-to-paste `[claim:<id>]` tags.
 
 ## Findings and syntheses

@@ -65,6 +65,53 @@ describe("ledger", () => {
     expect(f.ctx.db.eventCount("alpha", "a")).toBe(2)
   })
 
+  test("challenge lowers confidence so status and confidence agree (#4)", async () => {
+    const ce = { source: "s", locator: "b.ts:1", observation: "o", reason: "the scope came from my own argument" }
+    await f.call("ledger_upsert_claim", claimArgs("v", { confidence: "verified", confidenceBasis: "Seen directly" }))
+    expect(await f.call("ledger_challenge_claim", { id: "v", newStatus: "hypothesis", counterEvidence: ce })).toMatch(
+      /now hypothesis \(likely\)/,
+    )
+    let c = f.ctx.db.claim("alpha", "v")!
+    expect([c.status, c.confidence]).toEqual(["hypothesis", "likely"])
+    expect(c.confidenceBasis).toContain("the scope came from my own argument")
+    expect(c.confidenceBasis).toContain("Was verified: Seen directly")
+    const line = JSON.parse(readFileSync(jsonl(), "utf8").trim())
+    expect([line.status, line.confidence]).toEqual(["hypothesis", "likely"])
+
+    // A second challenge keeps stepping down.
+    await f.call("ledger_challenge_claim", { id: "v", newStatus: "hypothesis", counterEvidence: ce })
+    expect(f.ctx.db.claim("alpha", "v")!.confidence).toBe("speculative")
+
+    // Refuted drops to speculative; an explicit confidence and basis win.
+    await f.call("ledger_upsert_claim", claimArgs("r", { confidence: "verified" }))
+    await f.call("ledger_challenge_claim", { id: "r", newStatus: "refuted", counterEvidence: ce })
+    expect(f.ctx.db.claim("alpha", "r")!.confidence).toBe("speculative")
+    await f.call("ledger_upsert_claim", claimArgs("e", { confidence: "verified" }))
+    await f.call("ledger_challenge_claim", {
+      id: "e",
+      newStatus: "hypothesis",
+      counterEvidence: ce,
+      confidence: "speculative",
+      confidenceBasis: "A clean rerun would raise it",
+    })
+    c = f.ctx.db.claim("alpha", "e")!
+    expect([c.confidence, c.confidenceBasis]).toEqual(["speculative", "A clean rerun would raise it"])
+
+    // Keeping verified confidence on a challenged hypothesis is rejected and changes nothing.
+    await f.call("ledger_upsert_claim", claimArgs("k", { confidence: "verified" }))
+    expect(
+      await f.call("ledger_challenge_claim", { id: "k", newStatus: "hypothesis", counterEvidence: ce, confidence: "verified" }),
+    ).toMatch(/can't stay at `verified` confidence/)
+    expect(f.ctx.db.claim("alpha", "k")!.status).toBe("verified")
+  })
+
+  test("a hypothesis can't be recorded at verified confidence", async () => {
+    expect(
+      await f.call("ledger_upsert_claim", claimArgs("h", { status: "hypothesis", confidence: "verified", evidence: [] })),
+    ).toMatch(/can't have `verified` confidence/)
+    expect(f.ctx.db.claim("alpha", "h")).toBeNull()
+  })
+
   test("claim ids are per topic", async () => {
     await f.call("ledger_upsert_claim", claimArgs("same"))
     await f.call("research_topic", { action: "set", slug: "beta" }, "s2")
