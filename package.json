@@ -1,11 +1,36 @@
 {
-  "name": "@jflowers/opencode-research-harness",
+  "name": "opencode-research-harness",
   "version": "0.1.0",
   "description": "opencode plugin: per-session research topic scope, epistemic ledger, synthesis gate, Dewey export",
   "type": "module",
+  "main": "./src/index.ts",
   "license": "Apache-2.0",
   "exports": {
+    ".": "./src/index.ts",
     "./server": "./src/index.ts"
+  },
+  "files": [
+    "src/",
+    "skills/",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jflowers/opencode-research-harness.git"
+  },
+  "homepage": "https://github.com/jflowers/opencode-research-harness#readme",
+  "bugs": {
+    "url": "https://github.com/jflowers/opencode-research-harness/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin"
+  ],
+  "engines": {
+    "opencode": ">=1.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
