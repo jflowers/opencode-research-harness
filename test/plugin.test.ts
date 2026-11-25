@@ -39,3 +39,12 @@ test("a second copy for the same directory returns no hooks (§3.8 rule 2)", asy
   expect(second).toEqual({})
   await first.dispose?.()
 })
+
+test("registers the research-ledger skill only in a research workspace", async () => {
+  const hooks = await plugin.server(input(workspace(true)))
+  const config: { skills?: { paths?: string[] } } = {}
+  await hooks.config?.(config as never)
+  expect(config.skills?.paths?.[0]).toEndWith("/skills")
+  await hooks.dispose?.()
+  expect((await plugin.server(input(workspace(false)))).config).toBeUndefined()
+})
