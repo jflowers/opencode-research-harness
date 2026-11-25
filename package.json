@@ -1,6 +1,6 @@
 {
   "name": "opencode-research-harness",
-  "version": "0.1.0",
+  "version": "0.0.0-development",
   "description": "opencode plugin: per-session research topic scope, epistemic ledger, synthesis gate, Dewey export",
   "type": "module",
   "main": "./src/index.ts",
