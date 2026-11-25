@@ -4,6 +4,7 @@ import type { Hooks, Plugin, PluginInput, PluginModule } from "@opencode-ai/plug
 import { tool } from "@opencode-ai/plugin"
 import { CATEGORIES, CONFIDENCES, RELATIONS, STATUSES } from "./claims"
 import { loadConfig } from "./config"
+import { registerSkills } from "./skills"
 import { HarnessContext, type Logger, Rejection } from "./context"
 import { exportReportText, exportTopic } from "./modules/export"
 import { gateAfter, gateBefore } from "./modules/gate"
@@ -85,6 +86,7 @@ export function createHarness(ctx: HarnessContext): Hooks {
     }) ?? ""
 
   return {
+    config: async (opencodeConfig) => registerSkills(opencodeConfig),
     tool: {
       research_topic: tool({
         description:

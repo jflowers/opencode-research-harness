@@ -12,21 +12,22 @@ The design is in [SPEC.md](SPEC.md). Phase 1 is topic, ledger, gate and export; 
 
 ## Install
 
-```bash
-bun install
-```
-
-In the research workspace's `opencode.json`, load it by absolute path:
+In the research workspace's `opencode.json` (or the global
+`~/.config/opencode/opencode.jsonc`, since the plugin does nothing outside a
+research workspace):
 
 ```jsonc
 {
-  "plugin": ["/Users/jflowers/Projects/github/jflowers/opencode-research-harness"]
+  "plugin": ["opencode-research-harness"]
 }
 ```
 
-Copy or symlink `skills/research-ledger/` into the workspace's `.opencode/skills/`.
+In a research workspace the plugin also loads its `research-ledger` skill;
+there is nothing to copy into `.opencode/skills/`. To run a checkout instead
+of the release, `bun install` in it and list its absolute path in place of the
+package name.
 
-Load it **once**, from the project config only. A second copy for the same directory disables itself and logs a warning. Do not load `opencode-agent-supervisor` from the project config either; it is already global.
+Load it **once**: from the global config or the project config, not both. A second copy for the same directory disables itself and logs a warning. Do not load `opencode-agent-supervisor` from the project config either; it is already global.
 
 The plugin does nothing in a directory without `topics/`.
 
