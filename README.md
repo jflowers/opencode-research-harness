@@ -100,13 +100,6 @@ notes. A version already on npm is skipped, so a re-run is safe.
 npm trusts `publish.yml` by name: renaming it breaks publishing until the
 trusted publisher on npmjs.com is updated.
 
-**First release only.** `opencode-research-harness` isn't on npm yet. Publish 0.1.0 once by
-hand (`npm publish` from a clean checkout of `main`, with 2FA), add the
-trusted publisher on npmjs.com (repository `jflowers/opencode-research-harness`, workflow
-`publish.yml`, no environment), then dispatch `v0.1.0`: the run tags it,
-skips the publish because 0.1.0 is already there, and creates the GitHub
-release.
-
 ## Development
 
 ```bash
